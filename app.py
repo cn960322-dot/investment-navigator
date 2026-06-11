@@ -6,6 +6,7 @@ from plotly.subplots import make_subplots
 from playwright.sync_api import sync_playwright
 import json
 import os
+import requests
 
 # Linux 서버 환경에서 Playwright 브라우저 강제 설치 안내용 코드
 if not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
@@ -16,7 +17,15 @@ st.set_page_config(page_title="30년차 자산관리사의 투자 나침반", la
 st.title("📊 30년차 자산관리사의 스마트 자산 형성 대시보드")
 st.markdown("> **시장을 예측하지 마십시오. 위험(MDD)과 가치(PER), 그리고 심리(공포지수)를 모니터링하며 동행하십시오.**")
 
-# RSI(상대강도지수) 계산 함수 (표준 Wilder's 가중이동평균 방식)
+# 🔥 [보안 우회] 야후 파이낸스 IP 차단을 막기 위한 크롬 브라우저 위장 세션 생성
+session = requests.Session()
+session.headers.update({
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+})
+
+# RSI(상대강도지수) 계산 함수
 def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
     gain = delta.clip(lower=0)
@@ -32,13 +41,14 @@ def calculate_mdd_series(series: pd.Series) -> pd.Series:
     drawdown = (series - rolling_max) / rolling_max * 100
     return drawdown
 
-# 2. 데이터 캐싱 (최대 20년치 데이터를 백그라운드에서 한 번에 로드)
+# 2. 데이터 캐싱 (위장 세션 주입)
 @st.cache_data(ttl=3600)
 def get_all_base_data():
     end_date = pd.Timestamp.now()
     start_date = end_date - pd.DateOffset(years=20)
     tickers = ['^GSPC', '^NDX', 'QLD', 'TQQQ', '^VIX']
-    data = yf.download(tickers, start=start_date, end=end_date)['Close']
+    # 🛠️ 수집 시 브라우저 위장 세션(session=session) 강제 주입
+    data = yf.download(tickers, start=start_date, end=end_date, session=session)['Close']
     return data
 
 @st.cache_data(ttl=3600)
@@ -47,10 +57,11 @@ def get_big_tech_info():
     rows = []
     for ticker in tech_tickers:
         try:
-            t = yf.Ticker(ticker)
+            # 🛠️ 개별 티커 조회 시에도 위장 세션 주입
+            t = yf.Ticker(ticker, session=session)
             info = t.info
             name = info.get('shortName', ticker)
-            market_cap = info.get('marketCap', 0) / 1e12  # 조 달러 단위
+            market_cap = info.get('marketCap', 0) / 1e12
             per = info.get('trailingPE', None)
             current_price = info.get('currentPrice', 0)
             rows.append({
@@ -104,7 +115,7 @@ nasdaq_dd_all = calculate_mdd_series(base_data['^NDX'])
 qld_dd_all = calculate_mdd_series(base_data['QLD'])
 tqqq_dd_all = calculate_mdd_series(base_data['TQQQ'])
 
-# RSI 지표 미리 계산 (14일 기준)
+# RSI 지표 미리 계산
 sp500_rsi_all = calculate_rsi(base_data['^GSPC'])
 nasdaq_rsi_all = calculate_rsi(base_data['^NDX'])
 qld_rsi_all = calculate_rsi(base_data['QLD'])
@@ -118,7 +129,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🔥 4. 시장 심리 지표 (공포와 탐욕 / VIX)"
 ])
 
-# ---- 탭 1: S&P500 & NASDAQ (안전장치 강화) ----
+# ---- 탭 1: S&P500 & NASDAQ ----
 with tab1:
     st.subheader("주요 시장 지수 추이, 역사적 고점 대비 하락률(MDD) 및 RSI")
     years_1 = st.number_input("📅 S&P500 / NASDAQ 조회 기간 설정 (1~20년)", min_value=1, max_value=20, value=5, step=1, key="input_tab1")
@@ -131,7 +142,6 @@ with tab1:
     t1_nasdaq_rsi = nasdaq_rsi_all[nasdaq_rsi_all.index >= filter_date_1]
     
     if not t1_data.empty:
-        # 🛡️ 데이터 존재 여부 검사 (DDoS 방어망 작동 시 폭주 방지)
         sp500_clean = t1_data['^GSPC'].dropna()
         nasdaq_clean = t1_data['^NDX'].dropna()
         
@@ -143,7 +153,6 @@ with tab1:
             now_sp500_rsi = t1_sp500_rsi.dropna().iloc[-1]
             now_nasdaq_rsi = t1_nasdaq_rsi.dropna().iloc[-1]
             
-            # 🌟 상단 KPI 스코어보드 배치
             st.markdown("### 🎯 주요 시장 지수 실시간 지표 요약 (Current Status)")
             c_s1, c_s2, c_s3 = st.columns(3)
             c_s1.metric(label="🔹 S&P 500 현재 지수", value=f"{round(now_sp500_price, 2)}")
@@ -156,7 +165,6 @@ with tab1:
             c_n3.metric(label="🟥 NASDAQ 100 현재 RSI (14)", value=f"{round(now_nasdaq_rsi, 1)}")
             st.markdown("---")
             
-            # 📊 3단 서브플롯 구성
             fig1 = make_subplots(
                 rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, 
                 subplot_titles=("지수 추이 (Price)", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
@@ -178,7 +186,7 @@ with tab1:
         else:
             st.error("⚠️ 야후 파이낸스(Yahoo Finance)의 요청 제한(Rate Limit)으로 인해 일시적으로 데이터를 호출하지 못했습니다. 잠시 후(1~2분 뒤) 새로고침(F5)을 해주세요.")
 
-# ---- 탭 2: QLD & TQQQ (안전장치 강화) ----
+# ---- 탭 2: QLD & TQQQ ----
 with tab2:
     st.subheader("2배/3배 레버리지 지수 추이, MDD 및 과매수/과매도(RSI)")
     st.warning("⚠️ 레버리지 상품은 하락장 진입 시 변동성 끌림 현상으로 고점 회복이 매우 느립니다. RSI 지표를 활용하여 무릎 이하에서 분할 매수하는 전략을 권장합니다.")
@@ -192,7 +200,6 @@ with tab2:
     t2_tqqq_rsi = tqqq_rsi_all[tqqq_rsi_all.index >= filter_date_2]
     
     if not t2_data.empty:
-        # 🛡️ 데이터 존재 여부 검사
         qld_clean = t2_data['QLD'].dropna()
         tqqq_clean = t2_data['TQQQ'].dropna()
         
@@ -216,7 +223,6 @@ with tab2:
             c_t3.metric(label="🟥 TQQQ 현재 RSI (14)", value=f"{round(now_tqqq_rsi, 1)}")
             st.markdown("---")
             
-            # 📊 3단 서브플롯 구성
             fig2 = make_subplots(
                 rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, 
                 subplot_titles=("레버리지 주가 추이", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
