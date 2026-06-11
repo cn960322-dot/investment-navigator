@@ -7,6 +7,7 @@ from playwright.sync_api import sync_playwright
 import json
 import os
 import requests
+import time  # 🔥 숨 고르기(Delay) 기능을 위한 라이브러리 추가
 
 # Linux 서버 환경에서 Playwright 브라우저 강제 설치 안내용 코드
 if not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
@@ -56,6 +57,9 @@ def get_big_tech_info():
     rows = []
     for ticker in tech_tickers:
         try:
+            # 🔥 [정밀 우회] 야후 서버에 연속으로 폭주하지 않도록 종목당 0.5초씩 쉬어갑니다.
+            time.sleep(0.5)
+            
             t = yf.Ticker(ticker, session=session)
             info = t.info
             name = info.get('shortName', ticker)
@@ -242,14 +246,13 @@ with tab2:
         else:
             st.error("⚠️ 야후 파이낸스(Yahoo Finance)의 요청 제한(Rate Limit)으로 인해 일시적으로 데이터를 호출하지 못했습니다. 잠시 후(1~2분 뒤) 새로고침(F5)을 해주세요.")
 
-# ---- 탭 3: 미국 빅테크 TOP 10 (에러 방어막 강화) ----
+# ---- 탭 3: 미국 빅테크 TOP 10 ----
 with tab3:
     st.subheader("🇺🇸 미국 시가총액 상위 TOP 10 기업의 실시간 밸류에이션")
     
     with st.spinner("빅테크 데이터를 수집하고 가중평균을 산출하는 중..."):
         df_tech = get_big_tech_info()
         
-        # 🛡️ [정밀 보완] 차단 등으로 데이터가 비어있을 때 빈 화면 대신 에러 안내문 출력
         if not df_tech.empty:
             valid_df = df_tech[df_tech['현재 PER'].notna() & (df_tech['현재 PER'] > 0)].copy()
             
