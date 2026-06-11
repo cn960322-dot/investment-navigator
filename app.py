@@ -5,11 +5,32 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from playwright.sync_api import sync_playwright
 import json
+import os
+
+# Linux 서버 환경에서 Playwright 브라우저 강제 설치 안내용 코드
+if not os.path.exists(os.path.expanduser("~/.cache/ms-playwright")):
+    os.system("playwright install chromium")
 
 # 1. 웹페이지 기본 설정 (사이드바 없이 넓게 사용)
 st.set_page_config(page_title="30년차 자산관리사의 투자 나침반", layout="wide")
 st.title("📊 30년차 자산관리사의 스마트 자산 형성 대시보드")
 st.markdown("> **시장을 예측하지 마십시오. 위험(MDD)과 가치(PER), 그리고 심리(공포지수)를 모니터링하며 동행하십시오.**")
+
+# RSI(상대강도지수) 계산 함수 (표준 Wilder's 가중이동평균 방식)
+def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.ewm(com=period - 1, adjust=False).mean()
+    avg_loss = loss.ewm(com=period - 1, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+# MDD 계산 함수
+def calculate_mdd_series(series: pd.Series) -> pd.Series:
+    rolling_max = series.cummax()
+    drawdown = (series - rolling_max) / rolling_max * 100
+    return drawdown
 
 # 2. 데이터 캐싱 (최대 20년치 데이터를 백그라운드에서 한 번에 로드)
 @st.cache_data(ttl=3600)
@@ -40,7 +61,6 @@ def get_big_tech_info():
             continue
     df = pd.DataFrame(rows)
     if not df.empty:
-        # 시가총액 기준으로 내림차순 정렬
         df = df.sort_values(by='시가총액(조$)', ascending=False)
     return df
 
@@ -74,26 +94,24 @@ def get_cnn_fear_greed_live():
         pass
     return None, "데이터 연결 지연"
 
-# MDD 계산 함수
-def calculate_mdd_series(series: pd.Series) -> pd.Series:
-    rolling_max = series.cummax()
-    drawdown = (series - rolling_max) / rolling_max * 100
-    return drawdown
-
 # 기본 데이터 로드
 with st.spinner("금융 데이터를 동기화하는 중입니다..."):
     base_data = get_all_base_data()
 
-# MDD 미리 계산
+# 지표 미리 계산
 sp500_dd_all = calculate_mdd_series(base_data['^GSPC'])
 nasdaq_dd_all = calculate_mdd_series(base_data['^NDX'])
 qld_dd_all = calculate_mdd_series(base_data['QLD'])
 tqqq_dd_all = calculate_mdd_series(base_data['TQQQ'])
 
+# RSI 지표 미리 계산 (14일 기준)
+qld_rsi_all = calculate_rsi(base_data['QLD'])
+tqqq_rsi_all = calculate_rsi(base_data['TQQQ'])
+
 # 대시보드 탭 구성
 tab1, tab2, tab3, tab4 = st.tabs([
     "📈 1. 시장 지수 & MDD (S&P500 / NASDAQ)", 
-    "🚀 2. 레버리지 분석 (QLD / TQQQ)", 
+    "🚀 2. 레버리지 분석 & RSI (QLD / TQQQ)", 
     "💎 3. 빅테크 TOP 10 밸류에이션", 
     "🔥 4. 시장 심리 지표 (공포와 탐욕 / VIX)"
 ])
@@ -119,29 +137,55 @@ with tab1:
         col1.metric("선택 기간 내 S&P 500 최악의 낙폭 (최대 MDD)", f"{round(t1_sp500_dd.min(), 2)}%")
         col2.metric("선택 기간 내 NASDAQ 100 최악의 낙폭 (최대 MDD)", f"{round(t1_nasdaq_dd.min(), 2)}%")
 
-# ---- 탭 2: QLD & TQQQ ----
+# ---- 탭 2: QLD & TQQQ (RSI 추가로 3단 차트화) ----
 with tab2:
-    st.subheader("2배/3배 레버리지 지수 추이 및 MDD")
-    st.warning("⚠️ 레버리지 상품은 하락장 진입 시 변동성 끌림 현상으로 고점 회복이 매우 느립니다.")
+    st.subheader("2배/3배 레버리지 지수 추이, MDD 및 과매수/과매도(RSI)")
+    st.warning("⚠️ 레버리지 상품은 하락장 진입 시 변동성 끌림 현상으로 고점 회복이 매우 느립니다. RSI 지표를 활용하여 무릎 이하에서 분할 매수하는 전략을 권장합니다.")
     years_2 = st.slider("📅 QLD / TQQQ 조회 기간 설정", 1, 20, 5, key="slider_tab2")
     filter_date_2 = pd.Timestamp.now() - pd.DateOffset(years=years_2)
+    
     t2_data = base_data[base_data.index >= filter_date_2]
     t2_qld_dd = qld_dd_all[qld_dd_all.index >= filter_date_2]
     t2_tqqq_dd = tqqq_dd_all[tqqq_dd_all.index >= filter_date_2]
+    t2_qld_rsi = qld_rsi_all[qld_rsi_all.index >= filter_date_2]
+    t2_tqqq_rsi = tqqq_rsi_all[tqqq_rsi_all.index >= filter_date_2]
     
     if not t2_data.empty:
-        fig2 = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.1, subplot_titles=("레버리지 주가 추이", "고점 대비 하락률 (Drawdown, %)"))
-        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['QLD'], name="QLD (Nas x2)"), row=1, col=1)
-        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['TQQQ'], name="TQQQ (Nas x3)"), row=1, col=1)
-        fig2.add_trace(go.Scatter(x=t2_qld_dd.index, y=t2_qld_dd, name="QLD DD(%)", fill='tozeroy'), row=2, col=1)
-        fig2.add_trace(go.Scatter(x=t2_tqqq_dd.index, y=t2_tqqq_dd, name="TQQQ DD(%)", fill='tozeroy'), row=2, col=1)
-        fig2.update_layout(height=550, hovermode="x unified", margin=dict(t=30, b=10))
+        # 📊 3단 서브플롯 구성 (주가 / MDD / RSI)
+        fig2 = make_subplots(
+            rows=3, cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.06, 
+            subplot_titles=("레버리지 주가 추이", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
+        )
+        
+        # 1층: 주가 추이
+        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['QLD'], name="QLD (Nas x2)", line=dict(color='#1f77b4')), row=1, col=1)
+        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['TQQQ'], name="TQQQ (Nas x3)", line=dict(color='#ff7f0e')), row=1, col=1)
+        
+        # 2층: MDD 낙폭
+        fig2.add_trace(go.Scatter(x=t2_qld_dd.index, y=t2_qld_dd, name="QLD DD(%)", fill='tozeroy', line=dict(color='rgba(31, 119, 180, 0.7)')), row=2, col=1)
+        fig2.add_trace(go.Scatter(x=t2_tqqq_dd.index, y=t2_tqqq_dd, name="TQQQ DD(%)", fill='tozeroy', line=dict(color='rgba(255, 127, 14, 0.7)')), row=2, col=1)
+        
+        # 3층: RSI 지표
+        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_qld_rsi, name="QLD RSI (14)", line=dict(color='#2ca02c')), row=3, col=1)
+        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_tqqq_rsi, name="TQQQ RSI (14)", line=dict(color='#d62728')), row=3, col=1)
+        
+        # 3층 RSI 차트에 과매수(70) / 과매도(30) 기준선 추가
+        fig2.add_hline(y=70, line_dash="dash", line_color="rgba(214, 39, 40, 0.6)", row=3, col=1)
+        fig2.add_hline(y=30, line_dash="dash", line_color="rgba(31, 119, 180, 0.6)", row=3, col=1)
+        
+        # 차트 높이를 750으로 늘려 가독성 확보
+        fig2.update_layout(height=750, hovermode="x unified", margin=dict(t=30, b=10))
         st.plotly_chart(fig2, width='stretch')
+        
         col1, col2 = st.columns(2)
         col1.metric("선택 기간 내 QLD(2배) 최악의 낙폭 (최대 MDD)", f"{round(t2_qld_dd.min(), 2)}%")
         col2.metric("선택 기간 내 TQQQ(3배) 최악의 낙폭 (최대 MDD)", f"{round(t2_tqqq_dd.min(), 2)}%")
+        
+        st.info("💡 **RSI 투자 나침반:** RSI가 **30 이하**일 때는 시장이 극도의 공포에 질려 자산이 저평가된 구간(매수 유리)이며, **70 이상**일 때는 과열된 탐욕의 구간(추격 매수 자제)으로 해석합니다.")
 
-# ---- 탭 3: 미국 빅테크 TOP 10 (시총가중평균 반영) ----
+# ---- 탭 3: 미국 빅테크 TOP 10 ----
 with tab3:
     st.subheader("🇺🇸 미국 시가총액 상위 TOP 10 기업의 실시간 밸류에이션")
     
@@ -149,17 +193,13 @@ with tab3:
         df_tech = get_big_tech_info()
         
         if not df_tech.empty:
-            # 🔥 [정밀 수식 구현] PER이 정상적인 기업만 필터링하여 시총가중평균 계산
             valid_df = df_tech[df_tech['현재 PER'].notna() & (df_tech['현재 PER'] > 0)].copy()
             
             if not valid_df.empty:
                 total_mcap = valid_df['시가총액(조$)'].sum()
-                # 시총 / PER = 개별 기업 순이익 -> 총 순이익 합산
                 total_earnings = (valid_df['시가총액(조$)'] / valid_df['현재 PER']).sum()
-                # 총 시총 / 총 순이익 = 시총가중평균 PER
                 weighted_per = total_mcap / total_earnings
                 
-                # 🌟 친구분 대시보드 스타일의 상단 KPI 요약 카드 배치
                 st.markdown("### 🎯 빅테크 바스켓 시장 가치 평가 (Market PER)")
                 c_m1, c_m2, c_m3 = st.columns(3)
                 c_m1.metric(label="📊 시가총액 가중평균 PER (Market PER)", value=f"{round(weighted_per, 1)}")
@@ -167,7 +207,6 @@ with tab3:
                 c_m3.metric(label="📈 바스켓 포함 기업 수", value=f"{len(valid_df)} 개사")
                 st.markdown("---")
             
-            # 하단 상세 데이터 테이블 출력
             st.dataframe(df_tech.style.format({'시가총액(조$)': '{:.2f}T', '현재 PER': '{:.2f}'}), width='stretch', hide_index=True)
 
 # ---- 탭 4: 시장 심리 지표 ----
