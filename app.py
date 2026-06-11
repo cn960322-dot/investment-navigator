@@ -17,7 +17,7 @@ st.set_page_config(page_title="30년차 자산관리사의 투자 나침반", la
 st.title("📊 30년차 자산관리사의 스마트 자산 형성 대시보드")
 st.markdown("> **시장을 예측하지 마십시오. 위험(MDD)과 가치(PER), 그리고 심리(공포지수)를 모니터링하며 동행하십시오.**")
 
-# 🔥 [보안 우회] 야후 파이낸스 IP 차단을 막기 위한 크롬 브라우저 위장 세션 생성
+# [보안 우회] 야후 파이낸스 IP 차단을 막기 위한 크롬 브라우저 위장 세션 생성
 session = requests.Session()
 session.headers.update({
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -41,13 +41,12 @@ def calculate_mdd_series(series: pd.Series) -> pd.Series:
     drawdown = (series - rolling_max) / rolling_max * 100
     return drawdown
 
-# 2. 데이터 캐싱 (위장 세션 주입)
+# 2. 데이터 캐싱
 @st.cache_data(ttl=3600)
 def get_all_base_data():
     end_date = pd.Timestamp.now()
     start_date = end_date - pd.DateOffset(years=20)
     tickers = ['^GSPC', '^NDX', 'QLD', 'TQQQ', '^VIX']
-    # 🛠️ 수집 시 브라우저 위장 세션(session=session) 강제 주입
     data = yf.download(tickers, start=start_date, end=end_date, session=session)['Close']
     return data
 
@@ -57,7 +56,6 @@ def get_big_tech_info():
     rows = []
     for ticker in tech_tickers:
         try:
-            # 🛠️ 개별 티커 조회 시에도 위장 세션 주입
             t = yf.Ticker(ticker, session=session)
             info = t.info
             name = info.get('shortName', ticker)
@@ -244,13 +242,14 @@ with tab2:
         else:
             st.error("⚠️ 야후 파이낸스(Yahoo Finance)의 요청 제한(Rate Limit)으로 인해 일시적으로 데이터를 호출하지 못했습니다. 잠시 후(1~2분 뒤) 새로고침(F5)을 해주세요.")
 
-# ---- 탭 3: 미국 빅테크 TOP 10 ----
+# ---- 탭 3: 미국 빅테크 TOP 10 (에러 방어막 강화) ----
 with tab3:
     st.subheader("🇺🇸 미국 시가총액 상위 TOP 10 기업의 실시간 밸류에이션")
     
     with st.spinner("빅테크 데이터를 수집하고 가중평균을 산출하는 중..."):
         df_tech = get_big_tech_info()
         
+        # 🛡️ [정밀 보완] 차단 등으로 데이터가 비어있을 때 빈 화면 대신 에러 안내문 출력
         if not df_tech.empty:
             valid_df = df_tech[df_tech['현재 PER'].notna() & (df_tech['현재 PER'] > 0)].copy()
             
@@ -267,6 +266,8 @@ with tab3:
                 st.markdown("---")
             
             st.dataframe(df_tech.style.format({'시가총액(조$)': '{:.2f}T', '현재 PER': '{:.2f}'}), width='stretch', hide_index=True)
+        else:
+            st.error("⚠️ 야후 파이낸스 서버에서 빅테크 10개 기업의 상세 정보(PER, 시가총액) 호출이 일시적으로 거부되었습니다. 개별 종목 정보는 지수 데이터보다 보안 결계가 높아 풀리는 데 시간이 조금 더 걸릴 수 있습니다. 잠시 후(3~5분 뒤) 새로고침(F5)을 해주세요.")
 
 # ---- 탭 4: 시장 심리 지표 ----
 with tab4:
