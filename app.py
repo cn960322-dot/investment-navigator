@@ -55,22 +55,34 @@ def get_all_base_data():
 def get_big_tech_info():
     tech_tickers = ['MSFT', 'AAPL', 'NVDA', 'AMZN', 'GOOGL', 'META', 'TSLA', 'AVGO', 'LLY', 'V']
     rows = []
+    # 수정 코드
     for ticker in tech_tickers:
-        try:
-            # 🔥 [정밀 우회] 야후 서버에 연속으로 폭주하지 않도록 종목당 0.5초씩 쉬어갑니다.
-            time.sleep(0.5)
-            
-            t = yf.Ticker(ticker, session=session)
-            info = t.info
-            name = info.get('shortName', ticker)
-            market_cap = info.get('marketCap', 0) / 1e12
-            per = info.get('trailingPE', None)
-            current_price = info.get('currentPrice', 0)
-            rows.append({
-                '티커': ticker, '기업명': name, '현재가($)': current_price, 
-                '시가총액(조$)': round(market_cap, 2), '현재 PER': per
-            })
-        except:
+        success = False
+        for attempt in range(3): # 3번까지 재시도
+            try:
+                # 🔥 [수정] 대기 시간을 2.0초로 늘려 서버 부하 완화
+                time.sleep(2.0) 
+                
+                t = yf.Ticker(ticker, session=session)
+                info = t.info
+                
+                # 데이터가 정상적으로 들어왔는지 확인
+                if 'marketCap' in info:
+                    name = info.get('shortName', ticker)
+                    market_cap = info.get('marketCap', 0) / 1e12
+                    per = info.get('trailingPE', None)
+                    current_price = info.get('currentPrice', 0)
+                    rows.append({
+                        '티커': ticker, '기업명': name, '현재가($)': current_price, 
+                        '시가총액(조$)': round(market_cap, 2), '현재 PER': per
+                    })
+                    success = True
+                    break # 성공하면 다음 종목으로
+            except:
+                time.sleep(5) # 실패 시 5초 더 길게 쉬고 재시도
+        
+        if not success:
+            print(f"{ticker} 데이터 수집 실패")
             continue
     df = pd.DataFrame(rows)
     if not df.empty:
