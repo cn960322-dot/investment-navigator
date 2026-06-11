@@ -118,7 +118,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
     "🔥 4. 시장 심리 지표 (공포와 탐욕 / VIX)"
 ])
 
-# ---- 탭 1: S&P500 & NASDAQ (RSI 및 현재값 요약 완벽 보완) ----
+# ---- 탭 1: S&P500 & NASDAQ (안전장치 강화) ----
 with tab1:
     st.subheader("주요 시장 지수 추이, 역사적 고점 대비 하락률(MDD) 및 RSI")
     years_1 = st.number_input("📅 S&P500 / NASDAQ 조회 기간 설정 (1~20년)", min_value=1, max_value=20, value=5, step=1, key="input_tab1")
@@ -131,64 +131,54 @@ with tab1:
     t1_nasdaq_rsi = nasdaq_rsi_all[nasdaq_rsi_all.index >= filter_date_1]
     
     if not t1_data.empty:
-        # 실시간 현재 시점의 결측치 없는 유효 데이터 추출
-        now_sp500_price = t1_data['^GSPC'].dropna().iloc[-1]
-        now_nasdaq_price = t1_data['^NDX'].dropna().iloc[-1]
-        now_sp500_dd = t1_sp500_dd.dropna().iloc[-1]
-        now_nasdaq_dd = t1_nasdaq_dd.dropna().iloc[-1]
-        now_sp500_rsi = t1_sp500_rsi.dropna().iloc[-1]
-        now_nasdaq_rsi = t1_nasdaq_rsi.dropna().iloc[-1]
+        # 🛡️ 데이터 존재 여부 검사 (DDoS 방어망 작동 시 폭주 방지)
+        sp500_clean = t1_data['^GSPC'].dropna()
+        nasdaq_clean = t1_data['^NDX'].dropna()
         
-        # 🌟 상단 KPI 스코어보드 배치
-        st.markdown("### 🎯 주요 시장 지수 실시간 지표 요약 (Current Status)")
-        
-        # S&P 500 행 배치
-        c_s1, c_s2, c_s3 = st.columns(3)
-        c_s1.metric(label="🔹 S&P 500 현재 지수", value=f"{round(now_sp500_price, 2)}")
-        c_s2.metric(label="📉 S&P 500 현재 고점대비 하락률(DD)", value=f"{round(now_sp500_dd, 2)}%")
-        c_s3.metric(label="🟩 S&P 500 현재 RSI (14)", value=f"{round(now_sp500_rsi, 1)}")
-        
-        # NASDAQ 100 행 배치
-        c_n1, c_n2, c_n3 = st.columns(3)
-        c_n1.metric(label="🔸 NASDAQ 100 현재 지수", value=f"{round(now_nasdaq_price, 2)}")
-        c_n2.metric(label="📉 NASDAQ 100 현재 고점대비 하락률(DD)", value=f"{round(now_nasdaq_dd, 2)}%")
-        c_n3.metric(label="🟥 NASDAQ 100 현재 RSI (14)", value=f"{round(now_nasdaq_rsi, 1)}")
-        st.markdown("---")
-        
-        # 📊 3단 서브플롯 구성 (지수 / MDD / RSI)
-        fig1 = make_subplots(
-            rows=3, cols=1, 
-            shared_xaxes=True, 
-            vertical_spacing=0.06, 
-            subplot_titles=("지수 추이 (Price)", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
-        )
-        
-        # 1층: 지수 추이
-        fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_data['^GSPC'], name="S&P 500", line=dict(color='#1f77b4')), row=1, col=1)
-        fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_data['^NDX'], name="NASDAQ 100", line=dict(color='#ff7f0e')), row=1, col=1)
-        
-        # 2층: MDD 낙폭
-        fig1.add_trace(go.Scatter(x=t1_sp500_dd.index, y=t1_sp500_dd, name="S&P 500 DD(%)", fill='tozeroy', line=dict(color='rgba(31, 119, 180, 0.7)')), row=2, col=1)
-        fig1.add_trace(go.Scatter(x=t1_nasdaq_dd.index, y=t1_nasdaq_dd, name="NASDAQ 100 DD(%)", fill='tozeroy', line=dict(color='rgba(255, 127, 14, 0.7)')), row=2, col=1)
-        
-        # 3층: RSI 지표
-        fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_sp500_rsi, name="S&P 500 RSI (14)", line=dict(color='#2ca02c')), row=3, col=1)
-        fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_nasdaq_rsi, name="NASDAQ 100 RSI (14)", line=dict(color='#d62728')), row=3, col=1)
-        
-        # 3층 RSI 기준선 추가
-        fig1.add_hline(y=70, line_dash="dash", line_color="rgba(214, 39, 40, 0.6)", row=3, col=1)
-        fig1.add_hline(y=30, line_dash="dash", line_color="rgba(31, 119, 180, 0.6)", row=3, col=1)
-        
-        fig1.update_layout(height=750, hovermode="x unified", margin=dict(t=30, b=10))
-        st.plotly_chart(fig1, use_container_width=True)
-        
-        col1, col2 = st.columns(2)
-        col1.metric("선택 기간 내 S&P 500 최악의 낙폭 (최대 MDD)", f"{round(t1_sp500_dd.min(), 2)}%")
-        col2.metric("선택 기간 내 NASDAQ 100 최악의 낙폭 (최대 MDD)", f"{round(t1_nasdaq_dd.min(), 2)}%")
-        
-        st.info("💡 **지수 RSI 투자 팁:** 거대한 시장 지수(S&P500/나스닥)의 RSI가 30 부근까지 내려오는 것은 역사적인 대폭락장(예: 코로나, 리먼 사태 등) 수준의 기회입니다. 개별 레버리지 상품보다 훨씬 더 강력한 추세 전환 신호로 해석할 수 있습니다.")
+        if len(sp500_clean) > 0 and len(nasdaq_clean) > 0:
+            now_sp500_price = sp500_clean.iloc[-1]
+            now_nasdaq_price = nasdaq_clean.iloc[-1]
+            now_sp500_dd = t1_sp500_dd.dropna().iloc[-1]
+            now_nasdaq_dd = t1_nasdaq_dd.dropna().iloc[-1]
+            now_sp500_rsi = t1_sp500_rsi.dropna().iloc[-1]
+            now_nasdaq_rsi = t1_nasdaq_rsi.dropna().iloc[-1]
+            
+            # 🌟 상단 KPI 스코어보드 배치
+            st.markdown("### 🎯 주요 시장 지수 실시간 지표 요약 (Current Status)")
+            c_s1, c_s2, c_s3 = st.columns(3)
+            c_s1.metric(label="🔹 S&P 500 현재 지수", value=f"{round(now_sp500_price, 2)}")
+            c_s2.metric(label="📉 S&P 500 현재 고점대비 하락률(DD)", value=f"{round(now_sp500_dd, 2)}%")
+            c_s3.metric(label="🟩 S&P 500 현재 RSI (14)", value=f"{round(now_sp500_rsi, 1)}")
+            
+            c_n1, c_n2, c_n3 = st.columns(3)
+            c_n1.metric(label="🔸 NASDAQ 100 현재 지수", value=f"{round(now_nasdaq_price, 2)}")
+            c_n2.metric(label="📉 NASDAQ 100 현재 고점대비 하락률(DD)", value=f"{round(now_nasdaq_dd, 2)}%")
+            c_n3.metric(label="🟥 NASDAQ 100 현재 RSI (14)", value=f"{round(now_nasdaq_rsi, 1)}")
+            st.markdown("---")
+            
+            # 📊 3단 서브플롯 구성
+            fig1 = make_subplots(
+                rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, 
+                subplot_titles=("지수 추이 (Price)", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
+            )
+            fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_data['^GSPC'], name="S&P 500", line=dict(color='#1f77b4')), row=1, col=1)
+            fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_data['^NDX'], name="NASDAQ 100", line=dict(color='#ff7f0e')), row=1, col=1)
+            fig1.add_trace(go.Scatter(x=t1_sp500_dd.index, y=t1_sp500_dd, name="S&P 500 DD(%)", fill='tozeroy', line=dict(color='rgba(31, 119, 180, 0.7)')), row=2, col=1)
+            fig1.add_trace(go.Scatter(x=t1_nasdaq_dd.index, y=t1_nasdaq_dd, name="NASDAQ 100 DD(%)", fill='tozeroy', line=dict(color='rgba(255, 127, 14, 0.7)')), row=2, col=1)
+            fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_sp500_rsi, name="S&P 500 RSI (14)", line=dict(color='#2ca02c')), row=3, col=1)
+            fig1.add_trace(go.Scatter(x=t1_data.index, y=t1_nasdaq_rsi, name="NASDAQ 100 RSI (14)", line=dict(color='#d62728')), row=3, col=1)
+            fig1.add_hline(y=70, line_dash="dash", line_color="rgba(214, 39, 40, 0.6)", row=3, col=1)
+            fig1.add_hline(y=30, line_dash="dash", line_color="rgba(31, 119, 180, 0.6)", row=3, col=1)
+            fig1.update_layout(height=750, hovermode="x unified", margin=dict(t=30, b=10))
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            col1.metric("선택 기간 내 S&P 500 최악의 낙폭 (최대 MDD)", f"{round(t1_sp500_dd.min(), 2)}%")
+            col2.metric("선택 기간 내 NASDAQ 100 최악의 낙폭 (최대 MDD)", f"{round(t1_nasdaq_dd.min(), 2)}%")
+        else:
+            st.error("⚠️ 야후 파이낸스(Yahoo Finance)의 요청 제한(Rate Limit)으로 인해 일시적으로 데이터를 호출하지 못했습니다. 잠시 후(1~2분 뒤) 새로고침(F5)을 해주세요.")
 
-# ---- 탭 2: QLD & TQQQ ----
+# ---- 탭 2: QLD & TQQQ (안전장치 강화) ----
 with tab2:
     st.subheader("2배/3배 레버리지 지수 추이, MDD 및 과매수/과매도(RSI)")
     st.warning("⚠️ 레버리지 상품은 하락장 진입 시 변동성 끌림 현상으로 고점 회복이 매우 느립니다. RSI 지표를 활용하여 무릎 이하에서 분할 매수하는 전략을 권장합니다.")
@@ -202,53 +192,51 @@ with tab2:
     t2_tqqq_rsi = tqqq_rsi_all[tqqq_rsi_all.index >= filter_date_2]
     
     if not t2_data.empty:
-        now_qld_price = t2_data['QLD'].dropna().iloc[-1]
-        now_tqqq_price = t2_data['TQQQ'].dropna().iloc[-1]
-        now_qld_dd = t2_qld_dd.dropna().iloc[-1]
-        now_tqqq_dd = t2_tqqq_dd.dropna().iloc[-1]
-        now_qld_rsi = t2_qld_rsi.dropna().iloc[-1]
-        now_tqqq_rsi = t2_tqqq_rsi.dropna().iloc[-1]
+        # 🛡️ 데이터 존재 여부 검사
+        qld_clean = t2_data['QLD'].dropna()
+        tqqq_clean = t2_data['TQQQ'].dropna()
         
-        st.markdown("### 🎯 레버리지 상품 실시간 지표 요약 (Current Status)")
-        
-        c_q1, c_q2, c_q3 = st.columns(3)
-        c_q1.metric(label="🔹 QLD 현재가", value=f"${round(now_qld_price, 2)}")
-        c_q2.metric(label="📉 QLD 현재 고점대비 하락률(DD)", value=f"{round(now_qld_dd, 2)}%")
-        c_q3.metric(label="🟩 QLD 현재 RSI (14)", value=f"{round(now_qld_rsi, 1)}")
-        
-        c_t1, c_t2, c_t3 = st.columns(3)
-        c_t1.metric(label="🔸 TQQQ 현재가", value=f"${round(now_tqqq_price, 2)}")
-        c_t2.metric(label="📉 TQQQ 현재 고점대비 하락률(DD)", value=f"{round(now_tqqq_dd, 2)}%")
-        c_t3.metric(label="🟥 TQQQ 현재 RSI (14)", value=f"{round(now_tqqq_rsi, 1)}")
-        st.markdown("---")
-        
-        fig2 = make_subplots(
-            rows=3, cols=1, 
-            shared_xaxes=True, 
-            vertical_spacing=0.06, 
-            subplot_titles=("레버리지 주가 추이", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
-        )
-        
-        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['QLD'], name="QLD (Nas x2)", line=dict(color='#1f77b4')), row=1, col=1)
-        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['TQQQ'], name="TQQQ (Nas x3)", line=dict(color='#ff7f0e')), row=1, col=1)
-        
-        fig2.add_trace(go.Scatter(x=t2_qld_dd.index, y=t2_qld_dd, name="QLD DD(%)", fill='tozeroy', line=dict(color='rgba(31, 119, 180, 0.7)')), row=2, col=1)
-        fig2.add_trace(go.Scatter(x=t2_tqqq_dd.index, y=t2_tqqq_dd, name="TQQQ DD(%)", fill='tozeroy', line=dict(color='rgba(255, 127, 14, 0.7)')), row=2, col=1)
-        
-        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_qld_rsi, name="QLD RSI (14)", line=dict(color='#2ca02c')), row=3, col=1)
-        fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_tqqq_rsi, name="TQQQ RSI (14)", line=dict(color='#d62728')), row=3, col=1)
-        
-        fig2.add_hline(y=70, line_dash="dash", line_color="rgba(214, 39, 40, 0.6)", row=3, col=1)
-        fig2.add_hline(y=30, line_dash="dash", line_color="rgba(31, 119, 180, 0.6)", row=3, col=1)
-        
-        fig2.update_layout(height=750, hovermode="x unified", margin=dict(t=30, b=10))
-        st.plotly_chart(fig2, use_container_width=True)
-        
-        col1, col2 = st.columns(2)
-        col1.metric("선택 기간 내 QLD(2배) 최악의 낙폭 (최대 MDD)", f"{round(t2_qld_dd.min(), 2)}%")
-        col2.metric("선택 기간 내 TQQQ(3배) 최악의 낙폭 (최대 MDD)", f"{round(t2_tqqq_dd.min(), 2)}%")
-        
-        st.info("💡 **RSI 투자 나침반:** RSI가 **30 이하**일 때는 시장이 극도의 공포에 질려 자산이 저평가된 구간(매수 유리)이며, **70 이상**일 때는 과열된 탐욕의 구간(추격 매수 자제)으로 해석합니다.")
+        if len(qld_clean) > 0 and len(tqqq_clean) > 0:
+            now_qld_price = qld_clean.iloc[-1]
+            now_tqqq_price = tqqq_clean.iloc[-1]
+            now_qld_dd = t2_qld_dd.dropna().iloc[-1]
+            now_tqqq_dd = t2_tqqq_dd.dropna().iloc[-1]
+            now_qld_rsi = t2_qld_rsi.dropna().iloc[-1]
+            now_tqqq_rsi = t2_tqqq_rsi.dropna().iloc[-1]
+            
+            st.markdown("### 🎯 레버리지 상품 실시간 지표 요약 (Current Status)")
+            c_q1, c_q2, c_q3 = st.columns(3)
+            c_q1.metric(label="🔹 QLD 현재가", value=f"${round(now_qld_price, 2)}")
+            c_q2.metric(label="📉 QLD 현재 고점대비 하락률(DD)", value=f"{round(now_qld_dd, 2)}%")
+            c_q3.metric(label="🟩 QLD 현재 RSI (14)", value=f"{round(now_qld_rsi, 1)}")
+            
+            c_t1, c_t2, c_t3 = st.columns(3)
+            c_t1.metric(label="🔸 TQQQ 현재가", value=f"${round(now_tqqq_price, 2)}")
+            c_t2.metric(label="📉 TQQQ 현재 고점대비 하락률(DD)", value=f"{round(now_tqqq_dd, 2)}%")
+            c_t3.metric(label="🟥 TQQQ 현재 RSI (14)", value=f"{round(now_tqqq_rsi, 1)}")
+            st.markdown("---")
+            
+            # 📊 3단 서브플롯 구성
+            fig2 = make_subplots(
+                rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.06, 
+                subplot_titles=("레버리지 주가 추이", "고점 대비 하락률 (Drawdown, %)", "RSI 심리 지표 (과매수 70 / 과매도 30)")
+            )
+            fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['QLD'], name="QLD (Nas x2)", line=dict(color='#1f77b4')), row=1, col=1)
+            fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_data['TQQQ'], name="TQQQ (Nas x3)", line=dict(color='#ff7f0e')), row=1, col=1)
+            fig2.add_trace(go.Scatter(x=t2_qld_dd.index, y=t2_qld_dd, name="QLD DD(%)", fill='tozeroy', line=dict(color='rgba(31, 119, 180, 0.7)')), row=2, col=1)
+            fig2.add_trace(go.Scatter(x=t2_tqqq_dd.index, y=t2_tqqq_dd, name="TQQQ DD(%)", fill='tozeroy', line=dict(color='rgba(255, 127, 14, 0.7)')), row=2, col=1)
+            fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_qld_rsi, name="QLD RSI (14)", line=dict(color='#2ca02c')), row=3, col=1)
+            fig2.add_trace(go.Scatter(x=t2_data.index, y=t2_tqqq_rsi, name="TQQQ RSI (14)", line=dict(color='#d62728')), row=3, col=1)
+            fig2.add_hline(y=70, line_dash="dash", line_color="rgba(214, 39, 40, 0.6)", row=3, col=1)
+            fig2.add_hline(y=30, line_dash="dash", line_color="rgba(31, 119, 180, 0.6)", row=3, col=1)
+            fig2.update_layout(height=750, hovermode="x unified", margin=dict(t=30, b=10))
+            st.plotly_chart(fig2, use_container_width=True)
+            
+            col1, col2 = st.columns(2)
+            col1.metric("선택 기간 내 QLD(2배) 최악의 낙폭 (최대 MDD)", f"{round(t2_qld_dd.min(), 2)}%")
+            col2.metric("선택 기간 내 TQQQ(3배) 최악의 낙폭 (최대 MDD)", f"{round(t2_tqqq_dd.min(), 2)}%")
+        else:
+            st.error("⚠️ 야후 파이낸스(Yahoo Finance)의 요청 제한(Rate Limit)으로 인해 일시적으로 데이터를 호출하지 못했습니다. 잠시 후(1~2분 뒤) 새로고침(F5)을 해주세요.")
 
 # ---- 탭 3: 미국 빅테크 TOP 10 ----
 with tab3:
